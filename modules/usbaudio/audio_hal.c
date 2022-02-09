@@ -428,6 +428,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer, si
 {
     int ret;
     struct stream_out *out = (struct stream_out *)stream;
+    int is_fill = 0;
 
     stream_lock(&out->lock);
     if (out->standby) {
@@ -436,6 +437,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer, si
             goto err;
         }
         out->standby = false;
+        is_fill = true;
     }
 
     alsa_device_proxy* proxy = &out->proxy;
@@ -460,6 +462,21 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer, si
                                 out->conversion_buffer, num_device_channels,
                                 sample_size_in_bytes, num_write_buff_bytes);
         write_buff = out->conversion_buffer;
+    }
+
+    if (is_fill) {
+        int fill_len, rate;
+        char *fill_buff;
+        rate = out_get_sample_rate(&stream->common);
+        /* 20ms */
+        fill_len = audio_stream_out_frame_size(stream) * rate * 20 / 1000;
+        fill_buff = calloc(1, fill_len);
+        ALOGI("fill_len=%d, fill_buff=%p", fill_len, fill_buff);
+        if (fill_buff) {
+            memset(fill_buff, 0, fill_len);
+            proxy_write(&out->proxy, fill_buff, fill_len);
+            free(fill_buff);
+        }
     }
 
     if (write_buff != NULL && num_write_buff_bytes != 0) {
